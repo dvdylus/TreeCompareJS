@@ -1,7 +1,7 @@
 TreeCompare = (function() {
 
     var trees = [];
-    var backupTrees = [];
+    var backupRoot = [];
     var renderedTrees = [];
 
     //global variable set if manual reroot used!!!
@@ -22,7 +22,7 @@ TreeCompare = (function() {
 
     var triangleHeightDivisor = 3;
 
-    var defaultLineColor = "black";
+    var defaultLineColor = "grey";
 
     var currentS = "elementS";
     var currentBCN = "elementBCN";
@@ -168,7 +168,6 @@ TreeCompare = (function() {
                         tree.name = token;
                     } else if (x == ':') {
                         tree.length = parseFloat(token);
-                        tree.originalLength = parseFloat(token);
                     }
             }
         }
@@ -211,7 +210,7 @@ TreeCompare = (function() {
             data: {}
         };
         trees.push(fullTree);
-        backupTrees = trees; //add backup tree for re-rooting, otherwise lengths will be messed up when re-rooting multiple times
+        //add backup tree for re-rooting, otherwise lengths will be messed up when re-rooting multiple times
         //trees.pop(fullTree);
         //var str = JSON.stringify(tree);
         //console.log(fullTree);
@@ -687,7 +686,6 @@ TreeCompare = (function() {
                 return "translate(" + d.y + "," + d.x + ")";
             });
 
-
         nodeUpdate.select("text")
             .style("fill-opacity", 1)
             .text(function(d) {
@@ -700,6 +698,7 @@ TreeCompare = (function() {
                         return d.name
                     } else if (settings.internalLabels === "length") {
                         if (d.length) {
+                            //TODO: change position of lenght labels
                             return d.length.toFixed(3);
                         }
                     } else if (settings.internalLabels === "similarity") {
@@ -811,7 +810,7 @@ TreeCompare = (function() {
                         if (e.searchHighlight) {
                             return "red";
                         }
-                        if (e.mouseoverLinkHighlight){//color branch between two nodes in blue for rerooting
+                        if (e.mouseoverLinkHighlight){//color branch for re-rooting
                             return "green"
                         }
                         var d = d.source;
@@ -873,12 +872,12 @@ TreeCompare = (function() {
                         if (e.searchHighlight) {
                             return "red";
                         }
-                        if (e.mouseoverLinkHighlight){ //color branch between two nodes in blue for rerooting
+                        if (e.mouseoverLinkHighlight){ //color branch between two nodes in green for re-rooting
                             //console.log("here");
                             return "green";
                         }
                         var d = d.source;
-                        if (d[currentS] && !(d.clickedParentHighlight || d.correspondingHighlight || d.mouseoverHighlight)) {
+                        if (d[currentS] && !(d.clickedParentHighlight || d.correspondingHighlight || d.mouseoverHighlight || e.mouseoverLinkHighlight)) {
                             //console.log("here");
                             //console.log(d[currentS]);
                             return colorScale(d[currentS])
@@ -2266,25 +2265,21 @@ TreeCompare = (function() {
                     if (load) {
                         settings.loadedCallback();
                     }
-                    //TODO: add reset to orignial tree everytime before rerooting otherwise branchlengths always get halfed
-                    /*postorderTraverse(tree, function(e) {
-                        if(e.length !== e.originalLength){
-                            e.length = e.originalLength;
-                        }
-                        console.log(e);
 
-                    },false);
 
-                    if(manualReroot==true){
-                        tree = getTrees();
-                    }*/
+                    if(manualReroot==false) {//ensure that always the lengths of branches are conserved!
+                        backupRoot=root;
+                        manualReroot=true;
+                    } else {
+                        root = backupRoot;
+                    }
 
                     var i, d, tmp;
                     var p, q, r, s, new_root;
                     if (node == root) return root;
                     var dist = node.length/2;
-                    //var odist = node.originalLength;
                     tmp = node.length;
+
 
                     /* p: the central multi-parent node
                      * q: the new parent, previous a child of p
@@ -2295,14 +2290,11 @@ TreeCompare = (function() {
                     q = new_root = kn_new_node();
                     q.children[0] = node;
                     q.children[0].length = dist;
-                    //q.children[0].originalLength = odist;
                     p = node.parent;
                     q.children[0].parent = q;
                     for (i = 0; i < p.children.length; ++i)
                         if (p.children[i] == node) break;
                     q.children[1] = p;
-                    q.children[1].length = dist;
-                    //q.children[1].originalLength = odist;
                     d = p.length;
                     p.length = tmp - dist;
                     r = p.parent;
@@ -2342,8 +2334,6 @@ TreeCompare = (function() {
 
                     tree.root = new_root;
                     tree.data.root = tree.root; //create clickEvent that is given to update function
-                    console.log(backupTrees);
-                    //console.log(getTrees());
                     settings.loadedCallback();
                     postRerootClean(tree.root);
                     update(tree.root, tree.data);
@@ -2393,11 +2383,6 @@ TreeCompare = (function() {
                 update(tree.root, tree.data);
             }
 
-            /*function getSelectedNode(tree, id){
-                for(var i= 0, i<tree.length, i++){
-                    if(getSelectedNode(tree, id)==id)
-                }
-            }*/
 
 
             //render the tooltip on click
@@ -2456,15 +2441,15 @@ TreeCompare = (function() {
                 .style("cursor", "pointer")
                 .on("click", function(d) { // This is to reroot
                     d = e.target;
-                    if (!manualReroot){
-                        manualReroot = true;
-                    }
                     postorderTraverse(d, function(e) {
                         e.mouseoverHighlight = false;
                     });
 
                     kn_reroot(tree.root, d);
                     removeTooltips(svg);
+                    //if (!manualReroot){
+                    //    manualReroot = true;
+                    //}
                 });
             //console.log(this);
 
@@ -2677,153 +2662,144 @@ TreeCompare = (function() {
 
             d3.selectAll(".tooltipElem").remove();// ensures that not multiple reactangles are open when clicking on another node
             //console.log(d3.select(this));
-            d3.select(this).append("path")
-                .attr("class", "tooltipElem")
-                .attr("d", function(d) {
-                    return "M" + 0 + "," + 0 + "L" + (-triWidth) + "," + (-triHeight) + "L" + (triWidth) + "," + (-triHeight);
-                })
-                .style("fill", "gray");
+            if(d.name==="" || isCompared){ //ensures that final leaves are only showing a tooltip when in comparison mode
+                // this is defining the path of the tooltip
+                d3.select(this).append("path")
+                    .attr("class", "tooltipElem")
+                    .attr("d", function(d) {
+                        return "M" + 0 + "," + 0 + "L" + (-triWidth) + "," + (-triHeight) + "L" + (triWidth) + "," + (-triHeight);
+                    })
+                    .style("fill", "gray");
+                // this is defining the tooltip
+                d3.select(this).append("rect")
+                    .attr("class", "tooltipElem")
+                    .attr("x", function(d) {
+                        return -(rectWidth / 2);
+                    })
+                    .attr("y", function(d) {
+                        return -triHeight - rectHeight + 1;
+                    })
+                    .attr("width", rectWidth)
+                    .attr("height", rectHeight)
+                    .attr("rx", 10)
+                    .attr("ry", 10)
+                    .style("fill", "gray");
 
-            d3.select(this).append("rect")
-                .attr("class", "tooltipElem")
-                .attr("x", function(d) {
-                    return -(rectWidth / 2);
-                })
-                .attr("y", function(d) {
-                    return -triHeight - rectHeight + 1;
-                })
-                .attr("width", rectWidth)
-                .attr("height", rectHeight)
-                .attr("rx", 10)
-                .attr("ry", 10)
-                .style("fill", "gray");
-
-            var rpad = 10;
-            var tpad = 20;
-            var textDone = 0;
-            var textInc = 20;
-            d3.select(this).append("text")
-                .attr("class", "tooltipElem tooltipElemText")
-                .attr("y", (-rectHeight - triHeight + tpad + textDone))
-                .attr("x", ((-rectWidth / 2) + rpad))
-                .style("fill", "white")
-                .style("font-weight", "bold")
-                .text(function(d) {
-                    if (d._children) { // children invisible
-                        textDone += textInc;
-                        return "uncollapse >";
-                    } else if (d.children) { //children visible
-                        textDone += textInc;
-                        return "collapse >";
-                    }
-                })
-                .on("click", function(d) {
-                    postorderTraverse(d, function(e) {
-                        e.mouseoverHighlight = false;
-                    });
-                    collapse(d);
-                    removeTooltips(svg);
-
-                });
-
-            d3.select(this).append("text")
-                        .attr("class", "tooltipElem tooltipElemText")
-                        .attr("y", (-rectHeight - triHeight + tpad + textDone))
-                        .attr("x", ((-rectWidth / 2) + rpad))
-                        .style("fill", "white")
-                        .style("font-weight", "bold")
-                        .text(function(d) {
-                            if (d._children) {
-                                textDone += textInc;
-                                return "uncollapse all >";
-                            } else if (d.children) {
-                                textDone += textInc;
-                                return "collapse all >";
-                            }
-                })
-                .on("click", function(d) {
-                    postorderTraverse(d, function(e) {
-                        e.mouseoverHighlight = false;
-                    });
-                    collapseAll(d);
-                    removeTooltips(svg);
-                });
-
-            // This is to rotate two branches at a node
-            d3.select(this).append("text")
-                .attr("class", "tooltipElem tooltipElemText")
-                .attr("y", (-rectHeight - triHeight + tpad + textDone))
-                .attr("x", ((-rectWidth / 2) + rpad))
-                .style("fill", "white")
-                .style("font-weight", "bold")
-                .text(function(d) {
-                    if (d.children) {
-                        textDone += textInc;
-                        return "rotate";
-                    }
-                })
-                .on("click", function(d) {
-                    postorderTraverse(d, function(e) {
-                        e.mouseoverHighlight = false;
-                    });
-                    rotate(d);
-                    removeTooltips(svg);
-                });
-
-            d3.select(this).append("text")
-                .attr("class", "tooltipElem tooltipElemText")
-                .attr("y", (-rectHeight - triHeight + tpad + textDone))
-                .attr("x", ((-rectWidth / 2) + rpad))
-                .style("fill", "white")
-                .style("font-weight", "bold")
-                .text(function(d) {
-                    if (d.elementBCN) {
-                        textDone += textInc;
-                        if (d.clickedParentHighlight) {
-                            return "unhighlight >";
-                        } else {
-                            return "highlight >";
+                var rpad = 10;
+                var tpad = 20;
+                var textDone = 0;
+                var textInc = 20;
+                d3.select(this).append("text")
+                    .attr("class", "tooltipElem tooltipElemText")
+                    .attr("y", (-rectHeight - triHeight + tpad + textDone))
+                    .attr("x", ((-rectWidth / 2) + rpad))
+                    .style("fill", "white")
+                    .style("font-weight", "bold")
+                    .text(function(d) {
+                        if (d._children) { // children invisible
+                            textDone += textInc;
+                            return "uncollapse >";
+                        } else if (d.children) { //children visible
+                            textDone += textInc;
+                            return "collapse >";
                         }
-                    }
-                })
-                .on("click", function(d) {
-                    postorderTraverse(d, function(e) {
-                        e.mouseoverHighlight = false;
+                    })
+                    .on("click", function(d) {
+                        postorderTraverse(d, function(e) {
+                            e.mouseoverHighlight = false;
+                        });
+                        collapse(d);
+                        removeTooltips(svg);
+
                     });
-                    highlight(d);
-                    removeTooltips(svg);
-                });
 
-            d3.selection.prototype.moveToFront = function() {
-                return this.each(function() {
-                    this.parentNode.appendChild(this);
-                });
-            };
-            d3.select(this).moveToFront();
-            d3.select(this).selectAll(".tooltipElemText").each(function(d) {
-                d3.select(this).on("mouseover", function(d) {
-                    d3.select(this).transition().duration(50).style("fill", "black");
-                });
-                d3.select(this).on("mouseout", function(d) {
-                    d3.select(this).transition().duration(50).style("fill", "white");
-                });
-            });
-        }
+                d3.select(this).append("text")
+                    .attr("class", "tooltipElem tooltipElemText")
+                    .attr("y", (-rectHeight - triHeight + tpad + textDone))
+                    .attr("x", ((-rectWidth / 2) + rpad))
+                    .style("fill", "white")
+                    .style("font-weight", "bold")
+                    .text(function(d) {
+                        if (d._children) {
+                            textDone += textInc;
+                            return "uncollapse all >";
+                        } else if (d.children) {
+                            textDone += textInc;
+                            return "collapse all >";
+                        }
+                    })
+                    .on("click", function(d) {
+                        postorderTraverse(d, function(e) {
+                            e.mouseoverHighlight = false;
+                        });
+                        collapseAll(d);
+                        removeTooltips(svg);
+                    });
 
-        //if(d.mouseoverHighlight){
-            return nodeClick;
+                // This is to rotate two branches at a node
+                d3.select(this).append("text")
+                    .attr("class", "tooltipElem tooltipElemText")
+                    .attr("y", (-rectHeight - triHeight + tpad + textDone))
+                    .attr("x", ((-rectWidth / 2) + rpad))
+                    .style("fill", "white")
+                    .style("font-weight", "bold")
+                    .text(function(d) {
+                        if (d.children) {
+                            textDone += textInc;
+                            return "rotate";
+                        }
+                    })
+                    .on("click", function(d) {
+                        postorderTraverse(d, function(e) {
+                            e.mouseoverHighlight = false;
+                        });
+                        rotate(d);
+                        removeTooltips(svg);
+                    });
 
-            function toggleChildren(d) {
-                if (d.children) {
-                    d._children = d.children;
-                    d.children = null;
-                } else if (d._children) {
-                    d.children = d._children;
-                    d._children = null;
-                }
-                return d;
+                d3.select(this).append("text")
+                    .attr("class", "tooltipElem tooltipElemText")
+                    .attr("y", (-rectHeight - triHeight + tpad + textDone))
+                    .attr("x", ((-rectWidth / 2) + rpad))
+                    .style("fill", "white")
+                    .style("font-weight", "bold")
+                    .text(function(d) {
+                        if (d.elementBCN) {
+                            textDone += textInc;
+                            if (d.clickedParentHighlight) {
+                                return "unhighlight >";
+                            } else {
+                                return "highlight >";
+                            }
+                        }
+                    })
+                    .on("click", function(d) {
+                        postorderTraverse(d, function(e) {
+                            e.mouseoverHighlight = false;
+                        });
+                        highlight(d);
+                        removeTooltips(svg);
+                    });
+
+                d3.selection.prototype.moveToFront = function() {
+                    return this.each(function() {
+                        this.parentNode.appendChild(this);
+                    });
+                };
+                d3.select(this).moveToFront();
+                d3.select(this).selectAll(".tooltipElemText").each(function(d) {
+                    d3.select(this).on("mouseover", function(d) {
+                        d3.select(this).transition().duration(50).style("fill", "black");
+                    });
+                    d3.select(this).on("mouseout", function(d) {
+                        d3.select(this).transition().duration(50).style("fill", "white");
+                    });
+                });
             }
 
+        }
+
+        return nodeClick;
 
     }
 
